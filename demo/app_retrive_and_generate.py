@@ -54,7 +54,7 @@ def normalize_similarity_map_per_query_token(similarity_map: torch.Tensor) -> to
     similarity_map = similarity_map / (similarity_map.amax(dim=(2, 3), keepdim=True)[0] + 1e-8)
     return similarity_map
 
-def overlay_similarity_heatmap(model, image, processor, output_text, output_image):
+def overlay_similarity_heatmap(model, image, processor, output_text, output_image, query):
     # Define the ViT configuration
     vit_config = {
         'resolution': 448,
@@ -65,6 +65,8 @@ def overlay_similarity_heatmap(model, image, processor, output_text, output_imag
     # # Resize the image to square
     input_image_square = image.resize((vit_config['resolution'], vit_config['resolution']))
     
+    tokens = processor.tokenizer.convert_ids_to_tokens(processor.process_queries([query])['input_ids'].numpy()[0])
+    token_texts = [processor.tokenizer.convert_tokens_to_string([token]).strip() for token in tokens]
     # # Preprocess the inputs
     # input_text_processed = processor.process_queries([query])
     # input_image_processed = processor.process_images([input_image_square])
@@ -265,7 +267,7 @@ def search(query: str, ds, images, top_n: int, show_heatmap: bool):
             batch_query = {k: v.to(model.device) for k, v in batch_query.items()}
             embeddings_query = model(**batch_query)
         qs.extend(list(torch.unbind(embeddings_query.to("cpu"))))
-
+        
     # Run scoring
     scores = processor.score(qs, ds).cpu().numpy()
     top_indices = scores.argsort(axis=1).flatten()[-top_n:][::-1].tolist()
@@ -277,7 +279,7 @@ def search(query: str, ds, images, top_n: int, show_heatmap: bool):
     top_images_with_heatmap = []
     for idx in top_indices:
         img = images[idx]
-        img_with_heatmap = overlay_similarity_heatmap(model, img, processor, qs, ds[idx])
+        img_with_heatmap = overlay_similarity_heatmap(model, img, processor, qs, ds[idx], query)
         top_images_with_heatmap.append(img_with_heatmap)
     return f"Top {top_n} relevant pages are {top_indices}", top_indices, top_images_without_heatmap, top_images_with_heatmap
 
