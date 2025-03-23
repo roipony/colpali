@@ -1,0 +1,60 @@
+config:
+  (): colpali_engine.trainer.colmodel_training.ColModelTrainingConfig
+  output_dir: !path ../../../models/colgranitevision-ckpt-5e-nopad-causal-global-view-last-cont  # Ensure same directory for checkpointing
+  pretrained_peft_model_name_or_path: "models/colgranitevision-ckpt-5e-nopad-causal-global-view-last"
+
+  processor:
+    (): colpali_engine.utils.transformers_wrappers.AllPurposeWrapper
+    class_to_instanciate: !ext colpali_engine.models.ColGraniteVisionProcessor
+    pretrained_model_name_or_path:   "./models/granite-vision-3.1-2b-preview"  # Base model remains unchanged
+    config: "./models/granite-vision-3.1-2b-preview/config_base_image_last.json"
+    min_size: 384
+    max_size: 768
+
+  model:
+    (): colpali_engine.utils.transformers_wrappers.AllPurposeWrapper
+    class_to_instanciate: !ext colpali_engine.models.ColGraniteVision
+    pretrained_model_name_or_path: "./models/granite-vision-3.1-2b-preview" # "./models/colqwen2_base"
+    config: "./models/granite-vision-3.1-2b-preview/config_base_image_last.json"
+    torch_dtype:  !ext torch.bfloat16
+    #use_cache: false
+    attn_implementation: "flash_attention_2"
+    # (): colpali_engine.utils.transformers_wrappers.AllPurposeWrapper
+    # class_to_instanciate: !ext peft.PeftModel  # Use PEFT model
+    # base_model_name_or_path: "./models/granite-vision-3.1-2b-preview"  # Load base model
+    # model_id : "./models/colgranitevision-ckpt-5e-nopad-causal-global-view-last"  # Load trained LoRA adapter
+    # torch_dtype: !ext torch.bfloat16
+    # attn_implementation: "flash_attention_2"
+
+
+  dataset_loading_func: !ext colpali_engine.utils.dataset_transformation.load_train_set
+  eval_dataset_loader: !import ../data/test_data.yaml
+
+  run_eval: true
+  loss_func:
+    (): colpali_engine.loss.late_interaction_losses.ColbertPairwiseCELoss
+
+  tr_args:
+    (): transformers.training_args.TrainingArguments
+    output_dir: null
+    overwrite_output_dir: true
+    num_train_epochs: 5
+    per_device_train_batch_size: 30
+    gradient_checkpointing: true
+    gradient_checkpointing_kwargs: { "use_reentrant": false }
+    per_device_eval_batch_size: 8
+    eval_strategy: "steps"
+    dataloader_num_workers: 8
+    bf16: true
+    save_steps: 500
+    logging_steps: 10
+    eval_steps: 100
+    warmup_steps: 0
+    learning_rate: 5e-4
+    save_total_limit: 1
+    max_grad_norm: 4.0
+    run_name: "ColGraniteVision-ckpt-5e-nopad"
+    report_to: "clearml"
+
+  peft_config:
+    (): peft.LoraConfig
