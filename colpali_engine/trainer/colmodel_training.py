@@ -2,6 +2,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple
+from transformers import TrainerCallback
 
 import torch
 from datasets import concatenate_datasets
@@ -19,7 +20,7 @@ from colpali_engine.collators import CorpusQueryCollator, VisualRetrieverCollato
 from colpali_engine.loss.late_interaction_losses import (
     ColbertLoss,
 )
-from colpali_engine.trainer.contrastive_trainer import ContrastiveTrainer
+from colpali_engine.trainer.contrastive_trainer import ContrastiveTrainer, GradientCheckCallback, SaveLoRACheckpointCallback
 from colpali_engine.trainer.eval_utils import CustomRetrievalEvaluator
 from colpali_engine.utils.gpu_stats import print_gpu_utilization, print_summary
 from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
@@ -40,6 +41,7 @@ class ColModelTrainingConfig:
     dataset_loading_func: Optional[Callable] = None
     eval_dataset_loader: Optional[Dict[str, Callable]] = None
     pretrained_peft_model_name_or_path: Optional[str] = None
+    save_lora_every_n_steps: int = 500
 
     def __post_init__(self):
         """
@@ -51,8 +53,8 @@ class ColModelTrainingConfig:
 
         if self.tr_args is None:
             self.tr_args = TrainingArguments(output_dir=self.output_dir)
-        elif self.tr_args.output_dir is None:
-            self.tr_args.output_dir = self.output_dir
+        # elif self.tr_args.output_dir is None:
+        self.tr_args.output_dir = self.output_dir
 
         # cast if string
         if isinstance(self.tr_args.learning_rate, str):
@@ -118,6 +120,16 @@ class ColModelTraining:
         else:
             print("Training with in-batch negatives")
 
+        grad_check = GradientCheckCallback(
+            max_grad_norm=20.0,  # Detection threshold
+            skip_bad_grads=True
+        )
+    #     lora_save_callback = SaveLoRACheckpointCallback(
+    #     save_steps=self.config.save_lora_every_n_steps,  # Save every 100 steps
+    #     save_dir=self.config.output_dir,
+    #     keep_recent_n=100  # Keep only the 3 most recent checkpoints
+    # )
+
         trainer = ContrastiveTrainer(
             model=self.model,
             train_dataset=self.dataset["train"],
@@ -126,8 +138,11 @@ class ColModelTraining:
             data_collator=self.collator,
             loss_func=self.config.loss_func,
             is_vision_model=self.config.processor is not None,
+            save_lora_every_n_steps= self.config.save_lora_every_n_steps,
+            output_dir = self.config.output_dir
         )
-
+        trainer.add_callback(grad_check)
+        # trainer.add_callback(lora_save_callback)
         trainer.args.remove_unused_columns = False
 
         result = trainer.train(resume_from_checkpoint=self.config.tr_args.resume_from_checkpoint)
@@ -249,3 +264,4 @@ class ColModelTraining:
         # save git hash of the commit at beginning of training
         with open(f"{self.config.output_dir}/git_hash.txt", "w") as f:
             f.write(self.current_git_hash)
+        
