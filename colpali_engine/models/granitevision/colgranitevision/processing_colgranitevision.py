@@ -165,6 +165,9 @@ class ColGraniteVisionProcessor(BaseVisualRetrieverProcessor, LlavaNextProcessor
         # Get original size
         width, height = image.size
 
+        if min_size == -1 or max_size == -1:
+            return image.convert("RGB")
+
         # Determine scale factor based on the short side (min_size)
         if width < height:
             scale_factor = min_size / width
