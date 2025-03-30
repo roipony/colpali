@@ -1,5 +1,8 @@
 from pathlib import Path
-
+import os
+import sys
+os.environ["USE_LOCAL_DATASET"] = "0"
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),'..','..')))
 import configue
 import typer
 
