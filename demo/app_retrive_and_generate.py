@@ -5,7 +5,7 @@ import tempfile
 os.environ['HF_HOME'] = '/dccstor/ocr-ai/pony/projects/hf_home'
 os.environ['HF_DATASETS_CACHE'] = '/dccstor/ocr-ai/pony/projects/hf_home/datasets'
 os.environ['TRANSFORMERS_CACHE'] = '/dccstor/ocr-ai/pony/projects/hf_home/models'
-os.environ['HF_TOKEN'] = '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'
+os.environ['HF_TOKEN'] = ''
 os.environ['GRADIO_TEMP_DIR']= '/dccstor/ocr-ai/pony/projects/hf_home/tmp/gradio/'
 from typing import List, cast
 
@@ -299,8 +299,7 @@ def index(file, ds):
 
     return f"Uploaded and converted {len(images)} pages", ds, images, pdfWriter
 
-GOOGLE_API_KEY = 'AIzaSyCtU-qGS6I7UoKngYN7cZ1CF1-fAWiZFVY'
-genai.configure(api_key=GOOGLE_API_KEY)
+
 
 # Create the model
 generation_config = {
