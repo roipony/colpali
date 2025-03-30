@@ -67,19 +67,7 @@ def overlay_similarity_heatmap(model, image, processor, output_text, output_imag
     
     tokens = processor.tokenizer.convert_ids_to_tokens(processor.process_queries([query])['input_ids'].numpy()[0])
     token_texts = [processor.tokenizer.convert_tokens_to_string([token]).strip() for token in tokens]
-    # # Preprocess the inputs
-    # input_text_processed = processor.process_queries([query])
-    # input_image_processed = processor.process_images([input_image_square])
-    
-    # # Move to device
-    # input_text_processed = {k: v.to(model.device) for k, v in input_text_processed.items()}
-    # input_image_processed = {k: v.to(model.device) for k, v in input_image_processed.items()}
-    
-    # # Forward pass
-    # with torch.no_grad():
-    #     output_text = model(**input_text_processed)  # (1, n_text_tokens, hidden_dim)
-    #     output_image = model(**input_image_processed)  # (1, n_patches + n_special_tokens, hidden_dim)
-    
+
     # Remove special tokens from the output_image
     output_image = output_image.unsqueeze(0)
     output_text =torch.stack(output_text)
@@ -93,7 +81,6 @@ def overlay_similarity_heatmap(model, image, processor, output_text, output_imag
 
     # Compute the dot product similarity map
     similarity_map = torch.einsum("bnk,bijk->bnij", output_text, output_image)  # shape: (b, n_text_tokens, h, w)
-
     # Compute the norms of the text and image embeddings
     # text_norms = torch.norm(output_text, dim=2)  # shape: (b, n_text_tokens)
     # image_norms = torch.norm(output_image, dim=3)  # shape: (b, h, w)
@@ -169,7 +156,7 @@ def overlay_similarity_heatmap(model, image, processor, output_text, output_imag
     heatmap = (heatmap[:, :, :3] * 255).astype(np.uint8)  # Convert to RGB
 
     # Special color for maximum values
-    max_val_color = np.array([0, 0, 255], dtype=np.uint8)  # Bright red color
+    max_val_color = np.array([0, 0, 255], dtype=np.uint8)  # Bright blue color
     for i in range(3):  # Apply the color to the heatmap
         heatmap[..., i] = (max_val_mask_upsampled * max_val_color[i] + (1 - max_val_mask_upsampled) * heatmap[..., i]).astype(np.uint8)
 
@@ -354,7 +341,7 @@ model = ColPali.from_pretrained(
     device_map=device,  # or "mps" if on Apple Silicon
 ).eval()
 
-processor = ColPaliProcessor.from_pretrained(model_name)
+processor =  ColPaliProcessor.from_pretrained(model_name)
 
 
 
