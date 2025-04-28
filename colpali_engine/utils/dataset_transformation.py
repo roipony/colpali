@@ -200,6 +200,121 @@ def load_docvqa_dataset() -> DatasetDict:
     return ds_dict
 
 
+import os
+from typing import Tuple
+import logging
+
+# datasets library is essential for Hugging Face datasets
+from datasets import Dataset, DatasetDict
+from tqdm import tqdm
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def doc_fm_single_query_per_image(
+    multi_query_ds_dict: DatasetDict,
+    anchor_ds: Dataset,
+    original_dataset_name: str
+) -> Tuple[DatasetDict, Dataset, str]:
+    """
+    Derives the 'Step 1' dataset (one query per image) from a pre-loaded
+    multi-query dataset by filtering for query_index == 0.
+
+    Args:
+        multi_query_ds_dict: The DatasetDict containing all queries (multiple per image).
+                             Assumes 'train' split exists and has 'query_index' column.
+        anchor_ds: The Dataset containing unique image anchors.
+        original_dataset_name: The base name of the multi-query dataset.
+
+    Returns:
+        A tuple containing:
+        - DatasetDict: The derived query dataset (one query per image).
+        - Dataset: The original anchor dataset.
+        - str: A new dataset name indicating it's the derived Step 1 version.
+    """
+    ds_corpus_name = f"{original_dataset_name}_filtered"
+    logging.info(f"Deriving Step 1 dataset '{ds_corpus_name}'...")
+
+    if 'train' not in multi_query_ds_dict or not multi_query_ds_dict['train']:
+         logging.warning("Input multi_query_ds_dict['train'] is empty or missing. Returning empty Step 1 dataset.")
+         empty_ds = Dataset.from_dict({})
+         empty_dict = DatasetDict({'train': empty_ds, 'test': empty_ds})
+         # Return original anchor_ds even if queries are empty
+         return empty_dict, anchor_ds, f"{original_dataset_name}_step1_empty"
+
+    all_queries_ds = multi_query_ds_dict['train']
+
+    # Check if 'query_index' column exists
+    if 'query_index' not in all_queries_ds.column_names:
+        logging.error("Required 'query_index' column not found in multi_query_ds_dict['train']. Cannot derive Step 1 dataset.")
+        # Return empty datasets to signal failure clearly
+        empty_ds = Dataset.from_dict({})
+        empty_dict = DatasetDict({'train': empty_ds, 'test': empty_ds})
+        return empty_dict, Dataset.from_dict({}), f"{original_dataset_name}_step1_error" # Return empty anchor too
+
+    # Filter to keep only the first query (index 0) for each image
+    # This relies on the multi-query dataset having an entry with index 0 for every anchor.
+    single_query_ds = all_queries_ds.filter(
+        lambda example: example['query_index'] == 0,
+        desc="Filtering for query_index 0" # Description for progress bar
+    )
+
+    num_filtered = len(single_query_ds)
+    num_anchors = len(anchor_ds)
+
+    if num_filtered == 0 and num_anchors > 0:
+         logging.warning(f"Filtering for query_index=0 resulted in an empty dataset, but there are {num_anchors} anchors. Check data generation.")
+    elif num_filtered != num_anchors:
+        logging.warning(f"Mismatch after filtering: Queries ({num_filtered}) "
+                        f"!= Anchors ({num_anchors}). Some anchors might lack a query with index 0.")
+    total_samples = len(single_query_ds)
+
+    # Calculate split index
+    split_index = int(total_samples * 0.99)
+
+    # First 99% for train
+    train_dataset = single_query_ds.select(range(0, split_index))
+
+    # Last 1% for test
+    test_dataset = single_query_ds.select(range(split_index, total_samples))
+
+    query_ds_dict = DatasetDict({
+        'train': train_dataset,
+        'test': test_dataset # Reuse for test split as per previous pattern
+    })
+
+    anchor_ds = anchor_ds
+
+    logging.info(f"Successfully derived dataset '{ds_corpus_name}' with {num_filtered} entries.")
+
+    return query_ds_dict, anchor_ds, ds_corpus_name
+
+
+def load_docfm():
+    OUTPUT_DIR = "/dccstor/mm-rag/foad"
+    DATASET_BASE_NAME = "docfm_multi_query_v1"
+    CORPUS_QUERY_COLLATOR_BRANCH_NAME = "docfm"
+    query_dataset_path = os.path.join(OUTPUT_DIR, f"{DATASET_BASE_NAME}_queries")
+    anchor_dataset_path = os.path.join(OUTPUT_DIR, f"{DATASET_BASE_NAME}_anchors")
+   
+    multi_ds_dict = DatasetDict.load_from_disk(query_dataset_path)
+    multi_anchor_ds = Dataset.load_from_disk(anchor_dataset_path)
+
+    try:
+        step1_ds_dict, step1_anchor_ds, step1_corpus_type = doc_fm_single_query_per_image(
+            multi_query_ds_dict=multi_ds_dict,
+            anchor_ds=multi_anchor_ds,
+            original_dataset_name=CORPUS_QUERY_COLLATOR_BRANCH_NAME
+        )
+        print(f"\n📦 Derived Step 1 Dataset Name: {step1_corpus_type}")
+        print(f"🔢 Step 1 Query dataset size ('train' split): {len(step1_ds_dict['train'])}")
+        print(f"🖼️  Step 1 Anchor dataset size: {len(step1_anchor_ds)}") # Should match original anchor size
+        return step1_ds_dict, step1_anchor_ds, step1_corpus_type
+    except Exception as e:
+        logging.error(f"Failed to derive Step 1 dataset: {e}", exc_info=True)
+        return
+
+
 class TestSetFactory:
     def __init__(self, dataset_path):
         self.dataset_path = dataset_path
